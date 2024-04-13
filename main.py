@@ -1,5 +1,4 @@
 import base64
-import os
 import re
 import requests
 import smtplib
@@ -7,10 +6,14 @@ import smtplib
 from email.headerregistry import Address
 from email.message import EmailMessage
 
-
 def handler(event, context):
+
+    print(event)
+
     user_request = 'empty'
     user_cond = '0'
+    user_data = '0'
+    user_session = None
     session_end = False
     text = ''
 
@@ -18,95 +21,116 @@ def handler(event, context):
 
     # Проверка наличия состояния сессии и взятие значения из глобальной переменной даты
     if 'state' in event and \
-            'session' in event['state'] and \
-            'value' in event['state']['session']:
-        user_mass = event['state']['session']['value']
+        'session' in event['state'] and \
+        'value' in event['state']['session']:
+            user_mass = event['state']['session']['value']
 
     # Проверка наличия состояния сессии
     if 'state' in event and \
-            'session' in event['state'] and \
-            'condition' in event['state']['session']:
-        user_cond = event['state']['session']['condition']
+        'session' in event['state'] and \
+        'condition' in event['state']['session']:
+            user_cond = event['state']['session']['condition']
+        
+    if 'state' in event and \
+        'session' in event['state'] and \
+        'condition' in event['state']['session']:
+            user_data = event['state']['session']['data']
+
 
     # Проверка наличия сообщения от пользователя
     # original_utterance => command
     if 'request' in event and \
-            'command' in event['request'] and \
-            len(event['request']['command']) > 0:
+        'command' in event['request'] and \
+        len(event['request']['command']) > 0:
 
-        req = event['request']['command'].lower().strip()
+            req = event['request']['command'].lower().strip()
 
-        # help request
-        if 'помощь' in req or 'что ты умеешь' in req:
-            user_request = 'help'
+            # # exit request
+            # if req == 'выход':
+            #     user_request = 'exit'
 
-        # Гороскоп
-        elif req == 'основа':
-            if user_cond == '2':
-                user_request = 'OSN'
+            # help request
+            if 'помощь' in req or 'что ты умеешь' in req:
+                user_request = 'help'
+
+            # Гороскоп
+            elif req == 'основа':
+                if user_cond == '2':
+                    user_request = 'OSN'
+                else:
+                    user_request = 'error'
+            
+            #первая группа характеристик
+            elif req in ['1','2','3', 'один', 'два', 'три']:
+                if user_cond == '1':
+                    user_request = req
+                else:
+                    user_request = 'error'
+            
+            elif req == 'дополнение':
+                if user_cond == '1':
+                    user_request = 'DOP'
+                else:
+                    user_request = 'error'
+
+            #вторая группа характеристик
+            elif req in ['4','5','6', 'четыре' , 'пять' , 'шесть']:
+                if user_cond == '2':
+                    user_request = req
+                else:
+                    user_request = 'error'
+
+            # Письмо
+            elif req == 'письмо':
+                if user_cond in ['1', '2']:
+                    if 'session' in event and \
+                        'user' in event['session']:
+                        user_request = 'mail'
+                    else:
+                        user_request = 'mail_user_input'
+                # user_request = 'mail'
+                    # user_request = 'mail_user_input'
+                else:
+                    user_request = 'error'
+
+            elif req in ['почта яндекс аккаунта', 'авторизация']:
+                if user_cond == '3':
+                    user_request = 'mail_yandex_avtor'
+                else:
+                    user_request = 'error'
+
+            elif req == 'готово':
+                if user_cond == '31':
+                    user_request = 'mail_yandex_avtor'
+                else:
+                    user_request = 'error'
+
+            elif req in ['указать почту вручную', 'вручную', 'указать вручную']:
+                if user_cond == '3':
+                    user_request = 'mail_user_input'
+                else:
+                    user_request = 'error'
+
+            elif user_cond == '32':
+                user_request = 'mail_user_input_parse'
+                req = event['request']['original_utterance'].lower().strip()
+
+            # other => try date parse
             else:
-                user_request = 'error'
+                user_request = 'parse'
+                user_mass_parse = req.split(' ')
 
-        # первая группа характеристик
-        elif req in ['1', '2', '3', 'один', 'два', 'три']:
-            if user_cond == '1':
-                user_request = req
-            else:
-                user_request = 'error'
-
-        elif req == 'дополнение':
-            if user_cond == '1':
-                user_request = 'DOP'
-            else:
-                user_request = 'error'
-
-        # вторая группа характеристик
-        elif req in ['4', '5', '6', 'четыре', 'пять', 'шесть']:
-            if user_cond == '2':
-                user_request = req
-            else:
-                user_request = 'error'
-
-        # Письмо
-        elif req == 'письмо':
-            if user_cond in ['1', '2']:
-                user_request = 'mail'
-            else:
-                user_request = 'error'
-
-        elif req in ['почта яндекс аккаунта', 'авторизация']:
-            if user_cond == '3':
-                user_request = 'mail_yandex_avtor'
-            else:
-                user_request = 'error'
-
-        elif req == 'готово':
-            if user_cond == '31':
-                user_request = 'mail_yandex_avtor'
-            else:
-                user_request = 'error'
-
-        elif req in ['указать почту вручную', 'вручную', 'указать вручную']:
-            if user_cond == '3':
-                user_request = 'mail_user_input'
-            else:
-                user_request = 'error'
-
-        elif user_cond == '32':
-            user_request = 'mail_user_input_parse'
-            req = event['request']['original_utterance'].lower().strip()
-
-        # other => try date parse
-        else:
-            user_request = 'parse'
-            user_mass_parse = req.split(' ')
 
     match user_request:
 
         case 'empty':
-            text = 'Добро пожаловать в навык "Гороскоп Пифагора"!\n' + \
-                   'На основе даты Рождения я смогу составить психоматрицу человека.\n' + \
-                   'Чтобы начать составлять гороскоп назови дату Рождения. Например 6 августа 1990 года.'
+            text = 'Добро пожаловать в навык "Гороскоп Пифагора"!\n' +\
+            'На основе даты Рождения я смогу составить психоматрицу человека.\n'+\
+            'Чтобы начать составлять гороскоп назови дату Рождения. Например 6 августа 1990 года.'
+
+        # case 'exit':
+        #     text = 'Пока'
+        #     session_end = True
 
         case 'help':
             text = help_get()
@@ -117,34 +141,35 @@ def handler(event, context):
 
         case 'parse':
             text = 'Некорректный ввод. Попробуй ещё раз.'
-            if len(user_mass_parse) >= 3:
-                user_mass_parse[1] = month_text_to_int(user_mass_parse[1])
-                if user_mass_parse[1] != 'error' and \
+            try:
+                if len(user_mass_parse) >= 3:
+                    user_mass_parse[1] = month_text_to_int(user_mass_parse[1])                
+                    if user_mass_parse[1] != 'error' and \
                         user_mass_parse[0].isdigit() == True and \
                         user_mass_parse[2].isdigit() == True and \
-                        int(user_mass_parse[0]) > 0 and int(user_mass_parse[0]) <= 31 and \
-                        int(user_mass_parse[2]) > 0 and int(user_mass_parse[0]) < 3000:
-                    if user_mass_parse[1] == '02' and int(user_mass_parse[0]) > 29:
-                        text = 'Некорректный ввод. Попробуй ещё раз.'
-                    else:
-                        user_cond = '1'
+                        int(user_mass_parse[0])>0 and int(user_mass_parse[0])<=31 and \
+                        int(user_mass_parse[2])>0 and int(user_mass_parse[0])<3000:
+                        if user_mass_parse[1] == '02' and int(user_mass_parse[0])>29:
+                            text = 'Некорректный ввод. Попробуй ещё раз.'
+                        else:
+                            user_cond = '1'
+                            user_data = str(user_mass_parse[0]) + '.' + str(user_mass_parse[1]) + '.' + str(user_mass_parse[2])
+                            if len(user_mass_parse[0]) == 1:
+                                user_mass_parse[0] = f'0{user_mass_parse[0]}'
 
-                        if len(user_mass_parse[0]) == 1:
-                            user_mass_parse[0] = f'0{user_mass_parse[0]}'
+                            user_mass = list()
+                            user_mass.append(int(str(user_mass_parse[0])[:1]))
+                            user_mass.append(int(str(user_mass_parse[0])[1:]))
+                            user_mass.append(int(str(user_mass_parse[1])[:1]))
+                            user_mass.append(int(str(user_mass_parse[1])[1:]))
+                            for i in range(len(str(user_mass_parse[2]))):
+                                user_mass.append(int(str(user_mass_parse[2])[i]))
 
-                        user_mass = list()
-                        user_mass.append(int(str(user_mass_parse[0])[:1]))
-                        user_mass.append(int(str(user_mass_parse[0])[1:]))
-                        user_mass.append(int(str(user_mass_parse[1])[:1]))
-                        user_mass.append(int(str(user_mass_parse[1])[1:]))
-                        user_mass.append(int(str(user_mass_parse[2])[:1]))
-                        user_mass.append(int(str(user_mass_parse[2])[1:2]))
-                        user_mass.append(int(str(user_mass_parse[2])[2:3]))
-                        user_mass.append(int(str(user_mass_parse[2])[3:]))
+                            text = 'Выбери раздел, назвав его номер: 1 - личность, 2 - интеллект, 3 - жизнь. \n Можешь перейти к дополнительному разделу, сказав дополнение.\n Если хочешь отправить гороскоп на почту, скажи письмо.'
+            except:
+                pass
 
-                        text = 'Выбери раздел, назвав его номер: 1 - личность, 2 - интеллект, 3 - жизнь. \n Можешь перейти к дополнительному разделу, сказав дополнение.\n Если хочешь отправить гороскоп на почту, скажи письмо.'
-
-        case 'OSN' | '1' | '2' | '3' | 'один' | 'два' | 'три':
+        case 'OSN' | '1' | '2' | '3' |'один' | 'два' | 'три' :
             if user_request == 'OSN':
                 text = 'Выбери раздел, назови его номер: 1 - личность, 2 - интеллект, 3 - жизнь. \n Можешь перейти к дополнительному разделу, сказав дополнение.\n Если хочешь отправить гороскоп на почту, скажи 0.'
             elif user_request in ['1', 'один']:
@@ -152,10 +177,10 @@ def handler(event, context):
             elif user_request in ['2', 'два']:
                 text = IS(user_mass)
             else:
-                text = GO(user_mass)
+                text = GO(user_mass)            
             user_cond = '1'
 
-        case 'DOP' | '4' | '5' | '6' | 'четыре' | 'пять' | 'шесть':
+        case 'DOP' | '4' | '5' | '6'| 'четыре' | 'пять' | 'шесть':
             if user_request == 'DOP':
                 text = 'Выбери раздел, назвав его номер: 4 - внутренний мир, 5 - внешние факторы, 6 - индивидуальность \n Можешь перейти к основному разделу, сказав основа.\n Если хочешь отправить гороскоп на почту, скажи письмо.'
             elif user_request in ['4', 'четыре']:
@@ -167,34 +192,41 @@ def handler(event, context):
             user_cond = '2'
 
         case 'mail':
+            print('mail')
             user_cond = '3'
             text = 'Выберите способ отправки письма на почту. Если хочешь отправить, авторизовавшись в Яндекс аккаунте, скажи "авторизация". Если хочешь указать почту вручную, скажи "вручную".'
 
         case 'mail_yandex_avtor':
+            print('mail_yandex_avtor')
             user_access_token = ''
             user_cond = '31'
-
-            postmaster_token = os.environ.get('POST_TOKEN')
+            
+            print(event['session'])
+            print(event)
 
             # Пройдена ли авторизация (наличие токена)
             if 'session' in event and \
-                    'user' in event['session'] and \
-                    'access_token' in event['session']['user']:
+                'user' in event['session'] and\
+                'access_token' in event['session']['user']:
+                print('mail_yandex_avtor-session-ready')
                 user_access_token = event['session']['user']['access_token']
                 user_mail = get_sender_email_data(user_access_token)
-                if not send_email(postmaster_token,
-                                  'Гороскоп от Алисы', 'alisa.goroskop@yandex.ru',
-                                  user_mail[1], 'Гороскоп для Вас от навыка Алисы',
-                                  make_letter(user_mass)
-                                  ):
-                    text = 'Извините, не получилось отправить письмо. \n Если хотите попробовать отправить письмо ещё раз, скажите письмо.\n Если хотите начать заново, то введите дату рождения'
-                    user_cond = '3'
+                postmaster_token = 'TOKEN'
+                if not send_email(postmaster_token, 
+                        'Гороскоп от Алисы', 'MAIL',
+                        user_mail[1], 'Гороскоп для Вас от навыка Алисы',
+                        make_letter(user_mass, user_data)
+                        ):
+                        text = 'Извините, не получилось отправить письмо. \n Если хотите попробовать отправить письмо ещё раз, скажите письмо.\n Если хотите начать заново, то введите дату рождения'
+                        user_cond = '3'
                 else:
+                    print('mail_yandex_avtor-sended')
                     text = f'Гороскоп отправлен на почту {user_mail[1]}.\nДля продолжения работы введите следующую дату рождения.'
                     user_cond = '0'
 
             # Авторизация если нет токена
             if user_access_token == '':
+                print('mail_yandex_avtor-session-request')
                 text = 'Для отправки гороскопа на почту необходимо авторизоваться. \n После авторизации скажите Готово'
 
         case 'mail_user_input':
@@ -203,18 +235,22 @@ def handler(event, context):
 
         case 'mail_user_input_parse':
             user_cond = '3'
+            # user_cond = '32'
             regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
+            print(req)
             if not re.fullmatch(regex, req):
                 text = 'Извините, адрес неправильный! \n Выберите способ отправки письма на почту. Если хочешь отправить, авторизовавшись в Яндекс аккаунте, скажи "авторизация". Если хочешь указать почту вручную, скажи "вручную".'
 
+                # text = 'Извините, адрес неправильный! \n Введите почту ещё раз. \n Если хотите начать заново, то введите дату рождения.'
             else:
-                postmaster_token = os.environ.get('POST_TOKEN')
-                if not send_email(postmaster_token,
-                                  'Гороскоп от Алисы', 'alisa.goroskop@yandex.ru',
-                                  req, 'Гороскоп для Вас от навыка Алисы',
-                                  make_letter(user_mass)
-                                  ):
-                    text = 'Извините, не получилось отправить письмо. \n Выберите способ отправки письма на почту. Если хочешь отправить, авторизовавшись в Яндекс аккаунте, скажи "авторизация". Если хочешь указать почту вручную, скажи "вручную". \n Если хотите начать заново, то введите дату рождения'
+                postmaster_token = 'TOKEN'
+                if not send_email(postmaster_token, 
+                        'Гороскоп от Алисы', 'MAIL',
+                        req, 'Гороскоп для Вас от навыка Алисы',
+                        make_letter(user_mass, user_data)
+                        ):
+                        text = 'Извините, не получилось отправить письмо. \n Выберите способ отправки письма на почту. Если хочешь отправить, авторизовавшись в Яндекс аккаунте, скажи "авторизация". Если хочешь указать почту вручную, скажи "вручную". \n Если хотите начать заново, то введите дату рождения'
+                        # text = 'Извините, не получилось отправить письмо. \n Введите почту ещё раз. \n Если хотите начать заново, то введите дату рождения.'
                 else:
                     text = f'Гороскоп отправлен на почту {req}.\nДля продолжения работы введите следующую дату рождения.'
                     user_cond = '0'
@@ -222,17 +258,18 @@ def handler(event, context):
     resp = {
         'version': event['version'],
         'session': event['session'],
-        'response': {
+        'response':{
             'text': text,
             'end_session': session_end,
             'buttons': buttons_get(user_cond)
         },
-        'session_state': {'value': user_mass, 'condition': user_cond}
+        'session_state': {'value':user_mass, 'condition': user_cond, 'data':user_data}
     }
 
     # Запрос авторизации через Яндекс
     if user_cond == '31':
-        resp['start_account_linking'] = {}
+        #resp['start_account_linking'] = {}
+        resp['response']['directives']={'start_account_linking': {}}
 
     return resp
 
@@ -241,32 +278,34 @@ def buttons_get(state_code):
     buttons = []
     match state_code:
         case '0':
-            buttons.append({'title': 'Помощь', 'hide': True})
+            buttons.append({'title':'Помощь', 'hide': True})
         case '1':
-            buttons.append({'title': '1', 'hide': True})
-            buttons.append({'title': '2', 'hide': True})
-            buttons.append({'title': '3', 'hide': True})
-            buttons.append({'title': 'Дополнение', 'hide': True})
-            buttons.append({'title': 'Письмо', 'hide': True})
+            buttons.append({'title':'1', 'hide': True})
+            buttons.append({'title':'2', 'hide': True})
+            buttons.append({'title':'3', 'hide': True})
+            buttons.append({'title':'Дополнение', 'hide': True})
+            buttons.append({'title':'Письмо', 'hide': True})
         case '2':
-            buttons.append({'title': '4', 'hide': True})
-            buttons.append({'title': '5', 'hide': True})
-            buttons.append({'title': '6', 'hide': True})
-            buttons.append({'title': 'Основа', 'hide': True})
-            buttons.append({'title': 'Письмо', 'hide': True})
+            buttons.append({'title':'4', 'hide': True})
+            buttons.append({'title':'5', 'hide': True})
+            buttons.append({'title':'6', 'hide': True})
+            buttons.append({'title':'Основа', 'hide': True})
+            buttons.append({'title':'Письмо', 'hide': True})
         case '3':
-            buttons.append({'title': 'Авторизация', 'hide': True})
-            buttons.append({'title': 'Вручную', 'hide': True})
+            buttons.append({'title':'Авторизация', 'hide': True})
+            buttons.append({'title':'Вручную', 'hide': True})
         case '31':
-            buttons.append({'title': 'Готово', 'hide': True})
-
+            buttons.append({'title':'Готово', 'hide': True})
+    
     return buttons
+
+
 
 
 def month_text_to_int(txt):
     txt = txt.lower()
     resp = "error"
-
+    
     match txt:
         case "января":
             resp = "01"
@@ -318,12 +357,15 @@ def month_text_to_int(txt):
             resp = "12"
     return resp
 
-
 def LK(mass_in):
     matrix = baza(mass_in)
 
-    # вводим ответы
-    # Характер
+    text1 = ''
+    text2 = ''
+    text4 = ''
+
+    #вводим ответы
+    #Характер
     if matrix[0][0] == 0:
         text1 = 'Характер - слабо выражен. '
     elif matrix[0][0] == 1:
@@ -340,8 +382,8 @@ def LK(mass_in):
         text1 = 'Характер - перегруженный характер, завышенные амбиции не реализуются из-за низкой целеустремленности. '
     else:
         text1 = ' Характер - человек все контролирует, но сам избегает ответственности. '
-
-    # Энергия
+    
+    #Энергия
     if matrix[1][0] == 0:
         text2 = 'Энергия - дефицит энергии, постоянное ощущение усталости, нехватка времени. '
     elif matrix[1][0] == 1:
@@ -350,8 +392,8 @@ def LK(mass_in):
         text2 = 'Энергия - активность, энергичность, общительная личность, которая все успевает и имеет широкий круг интересов. '
     else:
         text2 = 'Энергия - безграничный запас энергии, что позволяет быстро решать несколько задач сразу и оказывать влияние на людей. '
-
-    # Здоровье
+    
+    #Здоровье
     if matrix[0][1] == 0:
         text4 = 'Здоровье - здоровье далеко от идеального, могут быть хронические заболевания, сниженный иммунитет, плохое зрение. '
     elif matrix[0][1] == 1:
@@ -361,16 +403,20 @@ def LK(mass_in):
     else:
         text4 = 'Здоровье - большая физическая сила, которая может переходить в агрессию. '
 
+
     text = f'{text1} \n{text2}\n{text4} '
 
     return text
 
-
 def IS(mass_in):
     matrix = baza(mass_in)
 
-    # вводим ответы
-    # Интерес
+    text3 = ''
+    text5 = ''
+    text9 = ''
+
+    #вводим ответы
+    #Интерес
     if matrix[2][0] == 0:
         text3 = 'Интерес - талант в творчестве. '
     elif matrix[2][0] == 1:
@@ -379,8 +425,8 @@ def IS(mass_in):
         text3 = 'Интерес - ярко выраженное стремление к получению знаний, особенно в области математики, техники, аналитики. '
     else:
         text3 = 'Интерес - есть способности для больших научных открытий, а также талант генерировать оригинальные идеи. '
-
-    # Логика
+    
+    #Логика
     if matrix[1][1] == 0:
         text5 = 'Логика - мечтатель, который любит строить воздушные замки, но не умеет планировать. '
     elif matrix[1][1] == 1:
@@ -389,8 +435,8 @@ def IS(mass_in):
         text5 = 'Логика - острый ум и тонкое чутьё, способности стратега и аналитика. '
     else:
         text5 = 'Логика - перегруженная логика, при которой человека могут одолевать навязчивые мысли, перфекционизм '
-
-    # Ум
+    
+    #Ум
     if matrix[2][2] == 0:
         text9 = 'Ум - слабая память, сложности в изложении своих мыслей. '
     elif matrix[2][2] == 1:
@@ -404,12 +450,15 @@ def IS(mass_in):
 
     return text
 
-
 def GO(mass_in):
     matrix = baza(mass_in)
 
-    # вводим ответы
-    # Труд
+    text6 = ''
+    text7 = ''
+    text8 = ''
+
+    #вводим ответы
+    #Труд
     if matrix[2][1] == 0:
         text6 = 'Труд - человек не любит заниматься монотонной ручной работой, а предпочитает зарабатывать своим умом. '
     elif matrix[2][1] == 1:
@@ -418,8 +467,8 @@ def GO(mass_in):
         text6 = 'Труд - мастер с золотыми руками, его профессия обычно связана с ремеслом. '
     else:
         text6 = 'Труд - склонности к оккультизму, умение управлять, манипулировать людьми. '
-
-    # Удача
+    
+    #Удача
     if matrix[0][2] == 0:
         text7 = 'Удача - человек ничего не получает просто так, но это не означает глобальное невезение. '
     elif matrix[0][2] == 1:
@@ -428,8 +477,8 @@ def GO(mass_in):
         text7 = 'Удача - постоянное присутствие удачи и защиту высших сил. '
     else:
         text7 = 'Удача - практически незамедлительно реализуются любые мысли, то есть и мечты, и страхи. '
-
-    # Долг
+    
+    #Долг
     if matrix[1][2] == 0:
         text8 = 'Долг - человек склонен больше принимать, чем отдавать, ставить на первый план свои интересы, вести себя эгоистично. '
     elif matrix[1][2] == 1:
@@ -438,25 +487,25 @@ def GO(mass_in):
         text8 = 'Долг - человек заботлив, добр, терпим, щедр, честен. '
     else:
         text8 = 'Долг - сильный контроль, гиперопека, религиозность. '
-
+    
     text = f'{text6} \n{text7} \n{text8}'
 
     return text
 
-
 def D1(mass_in):
     matrix = baza(mass_in)
 
-    sum_num1 = matrix[0][0] + matrix[1][0] + matrix[2][0]
-    sum_num2 = matrix[0][0] + matrix[1][1] + matrix[2][2]
+    sum_num1 = matrix[0][0] + matrix[1][0] + matrix[2][0] 
+    sum_num2 = matrix[0][0] + matrix[1][1] + matrix[2][2] 
     sum_num3 = matrix[2][0] + matrix[1][1] + matrix[0][2]
+
 
     text1 = ''
     text2 = ''
     text3 = ''
 
-    # вводим ответы
-    # Самооценка
+    #вводим ответы
+    #Самооценка
     if sum_num1 < 4:
         text1 = 'Самооценка занижена.'
     elif sum_num1 < 6:
@@ -464,7 +513,7 @@ def D1(mass_in):
     elif sum_num1 > 5:
         text1 = 'Самооценка завышена.'
 
-    # Духовность
+    #Духовность
     if sum_num2 < 2:
         text2 = 'Духовность - не придерживаетесь религии.'
     elif sum_num2 < 4:
@@ -472,7 +521,7 @@ def D1(mass_in):
     elif sum_num2 > 3:
         text2 = 'Духовность - придерживаетесь религии.'
 
-    # Темперамент
+    #Темперамент
     if sum_num3 < 4:
         text3 = 'Темперамент - слабо выражен темперамент.'
     elif sum_num3 < 6:
@@ -483,17 +532,17 @@ def D1(mass_in):
     text = f'{text1} \n{text2} \n{text3}'
     return text
 
-
 def D2(mass_in):
     matrix = baza(mass_in)
 
     sum_num1 = matrix[1][0] + matrix[1][1] + matrix[1][2]
-    sum_num2 = matrix[0][1] + matrix[1][1] + matrix[2][1]
+    sum_num2 = matrix[0][1] + matrix[1][1] + matrix[2][1] 
+
 
     text1 = ''
     text2 = ''
-    # вводим ответы
-    # Семья
+    #вводим ответы
+    #Семья
     if sum_num1 < 4:
         text1 = 'Семья - не стремитесь к браку и рождению детей.'
     elif sum_num1 < 6:
@@ -501,7 +550,7 @@ def D2(mass_in):
     elif sum_num1 > 5:
         text1 = 'Семья - для вас очень важна семья.'
 
-    # Финансы
+    #Финансы
     if sum_num2 < 3:
         text2 = 'Финансы - слабо выражено умение рационально пользоваться деньгами.'
     elif sum_num2 == 3:
@@ -509,23 +558,24 @@ def D2(mass_in):
     elif sum_num2 > 3:
         text2 = 'Финансы - талант зарабатывать, иногда скупость.'
 
+    
     text = f'{text1} \n{text2}'
     return text
-
 
 def D3(mass_in):
     matrix = baza(mass_in)
 
-    sum_num1 = matrix[0][0] + matrix[0][1] + matrix[0][2]
-    sum_num2 = matrix[0][2] + matrix[1][2] + matrix[2][2]
-    sum_num3 = matrix[2][0] + matrix[2][1] + matrix[2][2]
+    sum_num1 = matrix[0][0] + matrix[0][1] + matrix[0][2] 
+    sum_num2 = matrix[0][2] + matrix[1][2] + matrix[2][2] 
+    sum_num3 = matrix[2][0] + matrix[2][1] + matrix[2][2] 
+
 
     text1 = ''
     text2 = ''
     text3 = ''
 
-    # вводим ответы
-    # Цель
+    #вводим ответы
+    #Цель
     if sum_num1 < 4:
         text1 = 'Цель - сниженные амбиции.'
     elif sum_num1 < 6:
@@ -533,21 +583,21 @@ def D3(mass_in):
     elif sum_num1 > 6:
         text1 = 'Цель - стремление достичь желаемого любыми путями.'
 
-    # Талант
+    #Талант
     if sum_num2 < 4:
         text2 = 'Талант - нет природного потенциала, но все возможности у вас в руках!'
     elif sum_num2 > 3:
         text2 = 'Талант - наличие природного потенциала.'
 
-    # Привычки
+    #Привычки
     if sum_num3 < 4:
         text3 = 'Привычки - легко приспосабливаетесь к новым условиям.'
     elif sum_num3 > 3:
         text3 = 'Привычки - стараетесь не менять своих привычек.'
-
+    
+    
     text = f'{text1} \n{text2} \n{text3}'
     return text
-
 
 def baza(mass_in):
     mass2 = mass_in[:]
@@ -616,13 +666,12 @@ def baza(mass_in):
 
     return matrix
 
-
 def get_email_data_list(email_data_str: str) -> list:
     email_data_list = email_data_str.split("@")
     return email_data_list
 
-
-def send_email(access_token: str, sender_email_name: str, sender_email: str,
+# recipient_email_name: str,
+def send_email(access_token: str, sender_email_name: str, sender_email: str, 
                recipient_email: str, subject: str, message: str) -> bool:
     try:
         just_a_str = f"user={sender_email}\x01auth=Bearer {access_token}\x01\x01"
@@ -636,7 +685,7 @@ def send_email(access_token: str, sender_email_name: str, sender_email: str,
         msg = EmailMessage()
         msg['Subject'] = subject
         msg['From'] = Address(sender_email_name, sender_email_login, sender_email_domain)
-        # recipient_email_name,
+        # recipient_email_name, 
         msg['To'] = Address('', recipient_email_login, recipient_email_domain)
         msg.set_content(message, 'html')
 
@@ -650,10 +699,9 @@ def send_email(access_token: str, sender_email_name: str, sender_email: str,
 
     return True
 
-
 def get_sender_email_data(access_token: str) -> list:
     login_info_url = "https://login.yandex.ru/info?oauth_token={}"
-
+    
     try:
         response = requests.get(login_info_url.format(access_token))
         user_data = response.json()
@@ -661,12 +709,30 @@ def get_sender_email_data(access_token: str) -> list:
         sender_email = user_data["default_email"]
     except Exception:
         return []
-
+        
     return [sender_name, sender_email]
 
+def make_letter(mass_in, user_data):
 
-def make_letter(mass_in):
     matrix = baza(mass_in)
+    test1 = ''
+    test2 = ''
+    test3 = ''
+    test4 = ''
+    test5 = ''
+    test6 = ''
+    test7 = ''
+    test8 = ''
+    test9 = ''
+
+    test11 = ''
+    test12 = ''
+    test13 = ''
+    test14 = ''
+    test15 = ''
+    test16 = ''
+    test17 = ''
+    test18 = ''
 
     if matrix[0][0] == 0:
         text1 = 'Характер - слабо выражен. '
@@ -684,8 +750,8 @@ def make_letter(mass_in):
         text1 = 'Характер - перегруженный характер, завышенные амбиции не реализуются из-за низкой целеустремленности. '
     else:
         text1 = 'Характер - человек все контролирует, но сам избегает ответственности. '
-
-    # Энергия
+    
+    #Энергия
     if matrix[1][0] == 0:
         text2 = 'Энергия - дефицит энергии, постоянное ощущение усталости, нехватка времени. '
     elif matrix[1][0] == 1:
@@ -694,8 +760,8 @@ def make_letter(mass_in):
         text2 = 'Энергия - активность, энергичность, общительная личность, которая все успевает и имеет широкий круг интересов. '
     else:
         text2 = 'Энергия - безграничный запас энергии, что позволяет быстро решать несколько задач сразу и оказывать влияние на людей. '
-
-    # Здоровье
+    
+    #Здоровье
     if matrix[0][1] == 0:
         text4 = 'Здоровье - здоровье далеко от идеального, могут быть хронические заболевания, сниженный иммунитет, плохое зрение. '
     elif matrix[0][1] == 1:
@@ -713,8 +779,8 @@ def make_letter(mass_in):
         text3 = 'Интерес - ярко выраженное стремление к получению знаний, особенно в области математики, техники, аналитики. '
     else:
         text3 = 'Интерес - есть способности для больших научных открытий, а также талант генерировать оригинальные идеи. '
-
-    # Логика
+    
+    #Логика
     if matrix[1][1] == 0:
         text5 = 'Логика - мечтатель, который любит строить воздушные замки, но не умеет планировать. '
     elif matrix[1][1] == 1:
@@ -723,8 +789,8 @@ def make_letter(mass_in):
         text5 = 'Логика - острый ум и тонкое чутьё, способности стратега и аналитика. '
     else:
         text5 = 'Логика - перегруженная логика, при которой человека могут одолевать навязчивые мысли, перфекционизм '
-
-    # Ум
+    
+    #Ум
     if matrix[2][2] == 0:
         text9 = 'Ум - слабая память, сложности в изложении своих мыслей. '
     elif matrix[2][2] == 1:
@@ -734,7 +800,7 @@ def make_letter(mass_in):
     else:
         text9 = 'Ум - мощный интеллектуальный потенциал, который в негативе реализуется как злопамятность. '
 
-        # Труд
+        #Труд
     if matrix[2][1] == 0:
         text6 = 'Труд - человек не любит заниматься монотонной ручной работой, а предпочитает зарабатывать своим умом. '
     elif matrix[2][1] == 1:
@@ -743,8 +809,8 @@ def make_letter(mass_in):
         text6 = 'Труд - мастер с золотыми руками, его профессия обычно связана с ремеслом. '
     else:
         text6 = 'Труд - склонности к оккультизму, умение управлять, манипулировать людьми. '
-
-    # Удача
+    
+    #Удача
     if matrix[0][2] == 0:
         text7 = 'Удача - человек ничего не получает просто так, но это не означает глобальное невезение. '
     elif matrix[0][2] == 1:
@@ -753,8 +819,8 @@ def make_letter(mass_in):
         text7 = 'Удача - постоянное присутствие удачи и защиту высших сил. '
     else:
         text7 = 'Удача - практически незамедлительно реализуются любые мысли, то есть и мечты, и страхи. '
-
-    # Долг
+    
+    #Долг
     if matrix[1][2] == 0:
         text8 = 'Долг - человек склонен больше принимать, чем отдавать, ставить на первый план свои интересы, вести себя эгоистично. '
     elif matrix[1][2] == 1:
@@ -764,12 +830,15 @@ def make_letter(mass_in):
     else:
         text8 = 'Долг - сильный контроль, гиперопека, религиозность. '
 
-    sum_num14 = matrix[0][0] + matrix[1][0] + matrix[2][0]
-    sum_num17 = matrix[0][0] + matrix[1][1] + matrix[2][2]
+
+    
+
+    sum_num14 = matrix[0][0] + matrix[1][0] + matrix[2][0] 
+    sum_num17 = matrix[0][0] + matrix[1][1] + matrix[2][2] 
     sum_num18 = matrix[2][0] + matrix[1][1] + matrix[0][2]
 
-    # вводим ответы
-    # Самооценка
+    #вводим ответы
+    #Самооценка
     if sum_num14 < 4:
         text14 = 'Самооценка занижена.'
     elif sum_num14 < 6:
@@ -777,7 +846,7 @@ def make_letter(mass_in):
     elif sum_num14 > 5:
         text14 = 'Самооценка завышена.'
 
-    # Духовность
+    #Духовность
     if sum_num17 < 2:
         text17 = 'Духовность - не придерживаетесь религии.'
     elif sum_num17 < 4:
@@ -785,18 +854,19 @@ def make_letter(mass_in):
     elif sum_num17 > 3:
         text17 = 'Духовность - придерживаетесь религии.'
 
-    # Темперамент
+    #Темперамент
     if sum_num18 < 4:
         text18 = 'Темперамент - слабо выражен темперамент.'
     elif sum_num18 < 6:
         text18 = 'Темперамент - средний темперамент.'
     elif sum_num18 > 5:
-        text18 = 'Темпераиент - сильная харизма.'
+        text18 = 'Темперамент - сильная харизма.'
 
     sum_num12 = matrix[1][0] + matrix[1][1] + matrix[1][2]
-    sum_num15 = matrix[0][1] + matrix[1][1] + matrix[2][1]
+    sum_num15 = matrix[0][1] + matrix[1][1] + matrix[2][1] 
 
-    # Семья
+
+    #Семья
     if sum_num12 < 4:
         text12 = 'Семья - не стремитесь к браку и рождению детей.'
     elif sum_num12 < 6:
@@ -804,7 +874,7 @@ def make_letter(mass_in):
     elif sum_num12 > 5:
         text12 = 'Семья - для вас очень важна семья.'
 
-    # Финансы
+    #Финансы
     if sum_num15 < 3:
         text15 = 'Финансы - слабо выражено умение рационально пользоваться деньгами.'
     elif sum_num15 == 3:
@@ -812,9 +882,9 @@ def make_letter(mass_in):
     elif sum_num15 > 3:
         text15 = 'Финансы - талант зарабатывать, иногда скупость.'
 
-    sum_num11 = matrix[0][0] + matrix[0][1] + matrix[0][2]
-    sum_num16 = matrix[0][2] + matrix[1][2] + matrix[2][2]
-    sum_num13 = matrix[2][0] + matrix[2][1] + matrix[2][2]
+    sum_num11 = matrix[0][0] + matrix[0][1] + matrix[0][2] 
+    sum_num16 = matrix[0][2] + matrix[1][2] + matrix[2][2] 
+    sum_num13 = matrix[2][0] + matrix[2][1] + matrix[2][2] 
 
     if sum_num11 < 4:
         text11 = 'Цель - сниженные амбиции.'
@@ -823,23 +893,25 @@ def make_letter(mass_in):
     elif sum_num11 > 6:
         text11 = 'Цель - стремление достичь желаемого любыми путями.'
 
-    # Талант
+    #Талант
     if sum_num16 < 4:
         text16 = 'Талант - нет природного потенциала, но все возможности у вас в руках!'
     elif sum_num16 > 3:
         text16 = 'Талант - наличие природного потенциала.'
 
-    # Привычки
+    #Привычки
     if sum_num13 < 4:
         text13 = 'Привычки - легко приспосабливаетесь к новым условиям.'
     elif sum_num13 > 3:
         text13 = 'Привычки - стараетесь не менять своих привычек.'
-
+    
+    # text = f'Значение "квадрата Пифагора":\n{text1}\n{text2}\n{text3}\n{text4}\n{text5}\n{text6}\n{text7}\n{text8}\n{text9}\n{text11}\n{text12}\n{text13}\n{text14}\n{text15}\n{text16}\n{text17}\n{text18}'
+    
     text = f'''
     <html>
     <head></head>
     <body>
-        <p><h3>Расшифровка "Квадрата Пифагора":</h3></p>
+        <p><h3>Расшифровка "Квадрата Пифагора" для {user_data}:</h3></p>
         <p>
         {format_response(text1)}<br>
         {format_response(text2)}<br>
@@ -861,11 +933,10 @@ def make_letter(mass_in):
     </body>
     </html>
     '''
-
+    
     return text
 
-
-def format_response(txt: str) -> str:
+def format_response(txt:str) -> str:
     p = txt.find(' ')
     if p > 0:
         return '<b>' + txt[:p] + '</b>' + txt[p:]
@@ -875,3 +946,4 @@ def format_response(txt: str) -> str:
 
 def help_get():
     return 'Чтобы получить рассчёт "Квадрата Пифагора" назови дату Рождения, например 6 августа 1990 года.\n При желании ты сможешь отправить письмо с расшифровкой на почту.'
+    
